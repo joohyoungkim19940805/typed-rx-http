@@ -1,0 +1,6 @@
+{
+	"extends": "./react-library.json",
+	"compilerOptions": { "outDir": "dist" },
+	"include": ["src", "app", "components", "pages", "scripts", "turbo"],
+	"exclude": ["node_modules", "dist"]
+}

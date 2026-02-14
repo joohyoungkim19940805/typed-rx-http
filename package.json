@@ -1,0 +1,40 @@
+{
+  "name": "@byeolnaerim/typed-rx-http",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./next": {
+      "types": "./dist/next.d.ts",
+      "import": "./dist/next.js",
+      "require": "./dist/next.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "next": "^16.1.6",
+    "tsup": "^8.5.1",
+    "typescript": "5.9.3"
+  },
+  "peerDependenciesMeta": {
+    "next": { "optional": true }
+  }
+}

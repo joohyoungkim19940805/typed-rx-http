@@ -1,0 +1,23 @@
+{
+	"extends": "./nextjs.json",
+	"compilerOptions": {
+		"incremental": true,
+		"isolatedModules": true,
+		"noImplicitAny": false,
+		"baseUrl": ".",
+		"plugins": [
+			{
+				"name": "next"
+			}
+		],
+		"paths": {
+			"@app/*": ["./src/app/*"],
+			"@components/*": ["./src/components/*"],
+			"@handler/*": ["./src/handler/*"],
+			"@type/*": ["./src/@types/*"],
+			"@/*": ["./src/*"]
+		}
+	},
+	"include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+	"exclude": ["node_modules"]
+}
