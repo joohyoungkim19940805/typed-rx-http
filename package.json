@@ -56,8 +56,5 @@
 		"next": {
 			"optional": true
 		}
-	},
-	"publishConfig": {
-		"access": "restricted"
 	}
 }
