@@ -1,40 +1,63 @@
 {
-  "name": "@byeolnaerim/typed-rx-http",
-  "version": "0.0.1",
-  "private": true,
-  "type": "module",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    },
-    "./next": {
-      "types": "./dist/next.d.ts",
-      "import": "./dist/next.js",
-      "require": "./dist/next.cjs"
-    }
-  },
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "prepack": "npm run build"
-  },
-  "dependencies": {
-    "rxjs": "^7.8.2"
-  },
-  "devDependencies": {
-    "next": "^16.1.6",
-    "tsup": "^8.5.1",
-    "typescript": "5.9.3"
-  },
-  "peerDependenciesMeta": {
-    "next": { "optional": true }
-  }
+	"name": "@byeolnaerim/typed-rx-http",
+	"version": "0.0.1",
+	"description": "Typed RxJS-based HTTP client with optional Next.js adapters",
+	"keywords": [
+		"rxjs",
+		"http",
+		"client",
+		"typescript",
+		"openapi",
+		"nextjs"
+	],
+	"license": "Apache-2.0",
+	"author": "Joohyoung Kim (@oozu1994)",
+	"homepage": "https://byeolnaerim.com/typed-rx-http",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/joohyoungkim19940805/typed-rx-http.git"
+	},
+	"bugs": {
+		"url": "https://github.com/joohyoungkim19940805/typed-rx-http/issues"
+	},
+	"type": "module",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.cjs"
+		},
+		"./next": {
+			"types": "./dist/next.d.ts",
+			"import": "./dist/next.js",
+			"require": "./dist/next.cjs"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsup",
+		"dev": "tsup --watch",
+		"prepack": "npm run build"
+	},
+	"dependencies": {
+		"rxjs": "^7.8.2"
+	},
+	"devDependencies": {
+		"next": "^16.1.6",
+		"tsup": "^8.5.1",
+		"typescript": "5.9.3"
+	},
+	"peerDependenciesMeta": {
+		"next": {
+			"optional": true
+		}
+	},
+	"publishConfig": {
+		"access": "restricted"
+	}
 }
