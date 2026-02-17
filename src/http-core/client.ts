@@ -11,15 +11,21 @@ import {
 } from "rxjs";
 import { fromFetch } from "rxjs/fetch";
 
-import type { OpenApiPathsLike, ServiceArguments } from "./types";
-import { HttpResponseError } from "./types";
 import type { HeaderStore } from "./headers";
 import { ndjsonStream } from "./ndjson";
+import type { OpenApiPathsLike, ServiceArguments } from "./types";
+import { HttpResponseError } from "./types";
 import { joinUrl, replacePathVariable, toQueryString } from "./utils";
 
 export type HeadersProvider =
 	| (() => Record<string, string> | Promise<Record<string, string>>)
 	| undefined;
+
+export type DefaultErrorMessageResolver = (args: {
+	status?: number;
+	res: Response;
+	data: unknown;
+}) => string;
 
 export interface HttpClientOptions {
 	baseUrl: string;
@@ -41,14 +47,9 @@ export interface HttpClientOptions {
 	 * SSR에서 401을 redirect 처리하고 싶으면 여기로 주입 (Next adapter에서 제공)
 	 */
 	onServer401?: () => void | Promise<void>;
-}
 
-const defaultErrorMessage = (status?: number) => {
-	if (status === 500) {
-		return "서버에서 오류가 발생하였습니다.\n정상 처리되었는지 확인 후 다시 시도해주십시오.";
-	}
-	return "서버에서 오류가 발생하였습니다.\n잠시 후 다시 시도해주십시오.";
-};
+	defaultErrorMessage?: DefaultErrorMessageResolver;
+}
 
 const parseErrorBody = async (res: Response) => {
 	try {
@@ -88,12 +89,27 @@ export const createHttpClient = <Paths extends OpenApiPathsLike>(
 		headersProvider,
 		dropAuthWhenCacheControl = true,
 		onServer401,
+		defaultErrorMessage: defaultErrorMessageResolver,
 	} = opts;
 
 	const getBaseHeaders$ = () => {
 		if (headersProvider) return from(Promise.resolve(headersProvider()));
 		if (headerStore) return from(Promise.resolve(headerStore.get()));
 		return from(Promise.resolve({}));
+	};
+
+	const resolveErrorMessage = (res: Response, data: unknown) => {
+		const apiMsg = (data as any)?.message;
+		if (typeof apiMsg === "string" && apiMsg.length > 0) return apiMsg;
+
+		if (defaultErrorMessageResolver) {
+			return defaultErrorMessageResolver({
+				status: res.status,
+				res,
+				data,
+			});
+		}
+		return `HTTP ERROR${res.status} / ${res.statusText}\n${JSON.stringify(data)}`;
 	};
 
 	const callApi = <
@@ -180,9 +196,7 @@ export const createHttpClient = <Paths extends OpenApiPathsLike>(
 									) {
 										return throwError(() => data);
 									}
-									const msg =
-										(data as any)?.message ??
-										defaultErrorMessage(res.status);
+									const msg = resolveErrorMessage(res, data);
 
 									return throwError(
 										() =>
@@ -303,9 +317,7 @@ export const createHttpClient = <Paths extends OpenApiPathsLike>(
 									) {
 										return throwError(() => data);
 									}
-									const msg =
-										(data as any)?.message ??
-										defaultErrorMessage(res.status);
+									const msg = resolveErrorMessage(res, data);
 
 									return throwError(
 										() =>
@@ -326,7 +338,7 @@ export const createHttpClient = <Paths extends OpenApiPathsLike>(
 							);
 						}
 
-						// ✅ 한 줄에 하나씩 RChunk(JSON) 내려온다고 가정
+						//  한 줄에 하나씩 RChunk(JSON) 내려온다고 가정
 						return ndjsonStream<RChunk>(res.body);
 					}),
 				);
@@ -334,21 +346,27 @@ export const createHttpClient = <Paths extends OpenApiPathsLike>(
 		);
 	};
 
+	const defaultUploadFileHeaders: Record<string, string> = {
+		"Content-Encoding": "base64",
+		"Content-Type": "application/octet-stream",
+	};
 	/** uploadFile은 코어에 남겨도 setLogin/Wrapper와 무관 */
 	const uploadFile = ({
 		file,
 		url,
 		ifNoneMatch,
+		headers,
 	}: {
 		file: File;
 		url: string;
 		ifNoneMatch?: string;
+		headers?: Record<string, string>;
 	}) => {
-		const headers: Record<string, string> = {
-			"Content-Encoding": "base64",
-			"Content-Type": "application/octet-stream",
+		const mergedHeaders: Record<string, string> = {
+			...defaultUploadFileHeaders,
+			...(headers || {}),
 		};
-		if (ifNoneMatch) headers["If-None-Match"] = ifNoneMatch;
+		if (ifNoneMatch) mergedHeaders["If-None-Match"] = ifNoneMatch;
 		return fromFetch(url, { method: "PUT", body: file as any, headers });
 	};
 

@@ -46,12 +46,6 @@ function ndjsonStream(body) {
 }
 
 // src/http-core/client.ts
-var defaultErrorMessage = (status) => {
-  if (status === 500) {
-    return "\uC11C\uBC84\uC5D0\uC11C \uC624\uB958\uAC00 \uBC1C\uC0DD\uD558\uC600\uC2B5\uB2C8\uB2E4.\n\uC815\uC0C1 \uCC98\uB9AC\uB418\uC5C8\uB294\uC9C0 \uD655\uC778 \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC2ED\uC2DC\uC624.";
-  }
-  return "\uC11C\uBC84\uC5D0\uC11C \uC624\uB958\uAC00 \uBC1C\uC0DD\uD558\uC600\uC2B5\uB2C8\uB2E4.\n\uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC2ED\uC2DC\uC624.";
-};
 var parseErrorBody = async (res) => {
   try {
     return await res.json();
@@ -80,12 +74,26 @@ var createHttpClient = (opts) => {
     headerStore,
     headersProvider,
     dropAuthWhenCacheControl = true,
-    onServer401
+    onServer401,
+    defaultErrorMessage: defaultErrorMessageResolver
   } = opts;
   const getBaseHeaders$ = () => {
     if (headersProvider) return from(Promise.resolve(headersProvider()));
     if (headerStore) return from(Promise.resolve(headerStore.get()));
     return from(Promise.resolve({}));
+  };
+  const resolveErrorMessage = (res, data) => {
+    const apiMsg = data?.message;
+    if (typeof apiMsg === "string" && apiMsg.length > 0) return apiMsg;
+    if (defaultErrorMessageResolver) {
+      return defaultErrorMessageResolver({
+        status: res.status,
+        res,
+        data
+      });
+    }
+    return `HTTP ERROR${res.status} / ${res.statusText}
+${JSON.stringify(data)}`;
   };
   const callApi = (serviceArguments) => {
     let url = serviceArguments.pathVariable ? replacePathVariable(
@@ -139,7 +147,7 @@ var createHttpClient = (opts) => {
                   if (data && typeof data === "object" && data.resultType) {
                     return throwError(() => data);
                   }
-                  const msg = data?.message ?? defaultErrorMessage(res.status);
+                  const msg = resolveErrorMessage(res, data);
                   return throwError(
                     () => new HttpResponseError(
                       res,
@@ -219,7 +227,7 @@ var createHttpClient = (opts) => {
                   if (data && typeof data === "object" && data.resultType) {
                     return throwError(() => data);
                   }
-                  const msg = data?.message ?? defaultErrorMessage(res.status);
+                  const msg = resolveErrorMessage(res, data);
                   return throwError(
                     () => new HttpResponseError(
                       res,
@@ -245,13 +253,12 @@ var createHttpClient = (opts) => {
   const uploadFile = ({
     file,
     url,
-    ifNoneMatch
+    ifNoneMatch,
+    headers
   }) => {
-    const headers = {
-      "Content-Encoding": "base64",
-      "Content-Type": "application/octet-stream"
-    };
-    if (ifNoneMatch) headers["If-None-Match"] = ifNoneMatch;
+    ({
+      ...headers || {}
+    });
     return fromFetch(url, { method: "PUT", body: file, headers });
   };
   const createSSEObservable = (serviceArguments) => {

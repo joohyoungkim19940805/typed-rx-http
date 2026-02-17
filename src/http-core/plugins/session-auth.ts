@@ -13,8 +13,8 @@ import {
 	type MonoTypeOperatorFunction,
 } from "rxjs";
 import { fromFetch } from "rxjs/fetch";
-import { isHttpResponseError } from "../types";
 import type { HeaderStore } from "../headers";
+import { isHttpResponseError } from "../types";
 
 type TokenJson = { token?: string };
 
@@ -136,7 +136,7 @@ export const createSessionAuth = (opts: SessionAuthOptions) => {
 	};
 
 	/**
-	 * ✅ 핵심: callApi(...) 뒤에 .pipe(withSessionAuth())로 붙였다 떼기
+	 *  callApi(...) 뒤에 .pipe(withSessionAuth())로 붙였다 떼기
 	 * - subscribe 시점에 ensureToken$ 먼저 수행(헤더 세팅)
 	 * - 401이면 refresh 1번 시도 후 원 소스 재구독
 	 * - refresh 실패/토큰 없음이면 logout 후 에러 throw

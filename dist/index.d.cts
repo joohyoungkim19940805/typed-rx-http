@@ -12,6 +12,11 @@ interface HeaderStore {
 declare const createHeaderStore: (initial?: Record<string, string>) => HeaderStore;
 
 type HeadersProvider = (() => Record<string, string> | Promise<Record<string, string>>) | undefined;
+type DefaultErrorMessageResolver = (args: {
+    status?: number;
+    res: Response;
+    data: unknown;
+}) => string;
 interface HttpClientOptions {
     baseUrl: string;
     /** CSR에서 defaultHeaders를 쓰고 싶으면 store를 주면 됨(선택) */
@@ -30,14 +35,16 @@ interface HttpClientOptions {
      * SSR에서 401을 redirect 처리하고 싶으면 여기로 주입 (Next adapter에서 제공)
      */
     onServer401?: () => void | Promise<void>;
+    defaultErrorMessage?: DefaultErrorMessageResolver;
 }
 declare const createHttpClient: <Paths extends OpenApiPathsLike>(opts: HttpClientOptions) => {
     callApi: <R, TPath extends keyof Paths = keyof Paths, TMethod extends keyof Paths[TPath] & string = keyof Paths[TPath] & string>(serviceArguments: ServiceArguments<Paths, TPath, TMethod, R>) => Observable<R>;
     callApiStream: <RChunk, TPath_1 extends keyof Paths = keyof Paths, TMethod_1 extends keyof Paths[TPath_1] & string = keyof Paths[TPath_1] & string>(serviceArguments: ServiceArguments<Paths, TPath_1, TMethod_1, RChunk>) => Observable<RChunk>;
-    uploadFile: ({ file, url, ifNoneMatch, }: {
+    uploadFile: ({ file, url, ifNoneMatch, headers, }: {
         file: File;
         url: string;
         ifNoneMatch?: string;
+        headers?: Record<string, string>;
     }) => Observable<Response>;
     createSSEObservable: <R>(serviceArguments: ServiceArguments<Paths, any, any, any>) => Observable<R>;
 };
@@ -76,4 +83,4 @@ declare const createSessionAuth: (opts: SessionAuthOptions) => {
     withEnsureToken: <T>() => MonoTypeOperatorFunction<T>;
 };
 
-export { CacheForService, type HeaderStore, type HeadersProvider, type HttpClientOptions, OpenApiPathsLike, ServiceArguments, type SessionAuthOptions, createCsrCache, createHeaderStore, createHttpClient, createSessionAuth, joinUrl, ndjsonStream, replacePathVariable, stableStringify, toQueryString };
+export { CacheForService, type DefaultErrorMessageResolver, type HeaderStore, type HeadersProvider, type HttpClientOptions, OpenApiPathsLike, ServiceArguments, type SessionAuthOptions, createCsrCache, createHeaderStore, createHttpClient, createSessionAuth, joinUrl, ndjsonStream, replacePathVariable, stableStringify, toQueryString };

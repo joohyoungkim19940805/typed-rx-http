@@ -50,7 +50,7 @@ export class HttpResponseError<Args = unknown> extends Error {
 		public readonly data?: unknown,
 		message?: string,
 	) {
-		super(message ?? `HTTP ${response.status}`);
+		super(message ?? `HTTP ${response.status} / ${response.statusText}`);
 	}
 
 	get status() {
