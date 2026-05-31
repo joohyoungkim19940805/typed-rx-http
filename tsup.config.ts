@@ -4,6 +4,7 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     next: "src/next.ts",
+    rsocket: "src/rsocket.ts",
   },
   format: ["esm", "cjs"],
   dts: true,
@@ -12,5 +13,12 @@ export default defineConfig({
   treeshake: true,
 
   //  Next 없는 환경에서도 빌드되게
-  external: ["next", "next/*"],
+  external: [
+    "next",
+    "next/*",
+    "buffer",
+    "rsocket-core",
+    "rsocket-types",
+    "rsocket-websocket-client",
+  ],
 });

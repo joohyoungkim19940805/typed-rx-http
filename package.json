@@ -1,14 +1,17 @@
 {
 	"name": "@byeolnaerim/typed-rx-http",
 	"version": "0.0.3",
-	"description": "Typed RxJS-based HTTP client with optional Next.js adapters",
+	"description": "Typed RxJS-based HTTP client with optional Next.js and RSocket adapters",
 	"keywords": [
 		"rxjs",
 		"http",
 		"client",
 		"typescript",
 		"openapi",
-		"nextjs"
+		"nextjs",
+		"rsocket",
+		"websocket",
+		"reactive-streams"
 	],
 	"license": "Apache-2.0",
 	"author": "Joohyoung Kim (@oozu1994)",
@@ -34,6 +37,11 @@
 			"types": "./dist/next.d.ts",
 			"import": "./dist/next.js",
 			"require": "./dist/next.cjs"
+		},
+		"./rsocket": {
+			"types": "./dist/rsocket.d.ts",
+			"import": "./dist/rsocket.js",
+			"require": "./dist/rsocket.cjs"
 		}
 	},
 	"files": [
@@ -50,11 +58,34 @@
 	"devDependencies": {
 		"next": "^16.1.6",
 		"tsup": "^8.5.1",
-		"typescript": "5.9.3"
+		"typescript": "5.9.3",
+		"buffer": "^6.0.3",
+		"rxjs": "^7.8.2",
+		"rsocket-core": "^0.0.29-alpha.0",
+		"rsocket-types": "^0.0.29-alpha.0",
+		"rsocket-websocket-client": "^0.0.29-alpha.0"
 	},
 	"peerDependenciesMeta": {
 		"next": {
 			"optional": true
+		},
+		"buffer": {
+			"optional": true
+		},
+		"rsocket-core": {
+			"optional": true
+		},
+		"rsocket-types": {
+			"optional": true
+		},
+		"rsocket-websocket-client": {
+			"optional": true
 		}
+	},
+	"peerDependencies": {
+		"buffer": "^6.0.3",
+		"rsocket-core": "^0.0.29-alpha.0",
+		"rsocket-types": "^0.0.29-alpha.0",
+		"rsocket-websocket-client": "^0.0.29-alpha.0"
 	}
 }

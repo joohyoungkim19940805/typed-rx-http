@@ -1,6 +1,6 @@
 # @byeolnaerim/typed-rx-http
 
-TypeScript용 **RxJS 기반 타입 세이프 HTTP 클라이언트** + (선택) Next.js 어댑터.
+TypeScript용 **RxJS 기반 타입 세이프 HTTP 클라이언트** + (선택) Next.js/RSocket 어댑터.
 
 ## 핵심 특징
 
@@ -9,6 +9,8 @@ TypeScript용 **RxJS 기반 타입 세이프 HTTP 클라이언트** + (선택) N
 - **core는 프레임워크 독립** (Next.js 의존 없음)
 - Next.js 전용 기능은 `@byeolnaerim/typed-rx-http/next` 엔트리포인트로 분리  
   → `/next`를 import할 때만 Next.js가 필요
+- RSocket 전용 기능은 `@byeolnaerim/typed-rx-http/rsocket` 엔트리포인트로 분리  
+  → `/rsocket`을 import할 때만 RSocket 패키지가 필요
 
 ---
 
@@ -50,6 +52,30 @@ import {
 ```
 
 > Next.js를 사용하지 않는 프로젝트에서는 `/next`를 import하지 마세요.
+
+### RSocket 어댑터(선택)
+
+RSocket을 쓰는 프로젝트에서만 peer 패키지를 설치하세요.
+
+```bash
+npm i buffer rsocket-core rsocket-types rsocket-websocket-client
+```
+
+```ts
+import { createRSocketApi } from "@byeolnaerim/typed-rx-http/rsocket";
+
+const api = createRSocketApi("ws://localhost:7000/rsocket", jwt);
+
+api.mono<User>("user.findById", { id: 1 }).subscribe((user) => {
+	console.log(user);
+});
+
+api.stream<Notification>("notification.stream").subscribe((notification) => {
+	console.log(notification);
+});
+```
+
+> RSocket을 사용하지 않는 프로젝트에서는 `/rsocket`을 import하지 마세요.
 
 ---
 
@@ -380,67 +406,194 @@ const res = await firstValueFrom(obs$);
 
 ```ts
 import {
-	type CacheForService,
 	createCsrCache,
 	createHeaderStore,
 	createHttpClient,
-	type ServiceArguments,
+	createSessionAuth,
 } from "@byeolnaerim/typed-rx-http";
-import {
-	callApiSsrCache,
-	redirectToUnauthorizedOnServer401,
-} from "@byeolnaerim/typed-rx-http/next";
 
-import type { paths as Paths } from "./@types/ApiTypes";
+import type {
+	CacheForService,
+	ServiceArguments,
+} from "@byeolnaerim/typed-rx-http";
+
+import { defer, Observable } from "rxjs";
+
+import { setLogin } from "@ui/handler/hooks/useAccounts";
+
+import type { paths } from "./@types/ApiTypes";
+
 import type { CacheNames } from "./@types/CacheNames";
-import { cookies } from "next/headers";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL!;
+export const redirectToUnauthorizedOnServer401 = async () => {
+	const { headers } = await import("next/headers");
+	const { redirect } = await import("next/navigation");
 
-export const headerStore = createHeaderStore();
+	const h = await headers();
+	const pageUrl = h.get("x-page-url") || "/";
+	const redirectUri = encodeURIComponent(pageUrl);
 
-export const service = createHttpClient<Paths>({
-	baseUrl: apiUrl,
-	headerStore,
-	onServer401: redirectToUnauthorizedOnServer401,
+	redirect(`/unauthorized?redirect_uri=${redirectUri}&logout=true`);
+};
+
+export const headerStore = createHeaderStore({
+	"Content-Type": "application/json",
 });
 
-export const callApi = service.callApi;
-export const callApiStream = service.callApiStream;
-
-// CSR cache
-const csrCache = createCsrCache<CacheNames>();
-export const callApiClientCache = csrCache.callApiCsrCache;
-export const removeCsrCache = csrCache.removeCsrCache;
-
-// SSR headers provider
 const headersProvider = async () => {
+	if (typeof window !== "undefined") {
+		/**
+		 * 라이브러리쪽 코드가
+		 * if (headersProvider) return headersProvider();
+		 * if (headerStore) return headerStore.get();
+		 * 이렇게 되어있음 같이 못씀, 방향자체는 맞음. 라이브러리쪽에서 marge해버리면 csr/ssr 구분못함
+		 */
+		return headerStore.get();
+	}
+
+	const { cookies } = await import("next/headers");
+
 	const cookieStore = await cookies();
 	const cookieHeader = cookieStore
 		.getAll()
 		.map((c) => `${c.name}=${c.value}`)
 		.join("; ");
 
+	const authorization = cookieStore.get("Authorization")?.value;
 	const accessToken = cookieStore.get("accessToken")?.value;
 
 	return {
 		...(cookieHeader ? { Cookie: cookieHeader } : {}),
-		...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+		...(authorization
+			? {
+					Authorization: authorization.startsWith("Bearer ")
+						? authorization
+						: `Bearer ${authorization}`,
+				}
+			: {}),
+		...(!authorization && accessToken
+			? {
+					Authorization: accessToken.startsWith("Bearer ")
+						? accessToken
+						: `Bearer ${accessToken}`,
+				}
+			: {}),
 	};
 };
 
-export function callApiServerCache<R>(
-	serviceArguments: ServiceArguments<Paths, any, any, R>,
+export const service = createHttpClient<paths>({
+	baseUrl: process.env.NEXT_PUBLIC_API_URL || "",
+	onServer401: redirectToUnauthorizedOnServer401,
+	defaultErrorMessage: () => {
+		return "알 수 없는 오류가 발생했습니다.";
+	},
+	headerStore,
+	headersProvider,
+	dropAuthWhenCacheControl: true,
+});
+
+const sessionAuth = createSessionAuth({
+	headerStore,
+	tokenUrl: "/api/auth/token",
+	refreshUrl: "/api/auth/token/refresh",
+	logoutUrl: "/api/auth/logout",
+	onLoginChange: (loggedIn) => {
+		if (typeof window !== "undefined") {
+			setLogin(loggedIn);
+		}
+	},
+});
+
+export const callApi = <
+	R,
+	TPath extends keyof paths = keyof paths,
+	TMethod extends keyof paths[TPath] & string = keyof paths[TPath] & string,
+>(
+	serviceArguments: ServiceArguments<paths, TPath, TMethod, R>,
+): Observable<R> => {
+	return defer(() =>
+		service.callApi<R, TPath, TMethod>(serviceArguments),
+	).pipe(sessionAuth.withSessionAuth());
+};
+
+export const callApiStream = <
+	R,
+	TPath extends keyof paths = keyof paths,
+	TMethod extends keyof paths[TPath] & string = keyof paths[TPath] & string,
+>(
+	serviceArguments: ServiceArguments<paths, TPath, TMethod, R>,
+): Observable<R> => {
+	return defer(() =>
+		service.callApiStream<R, TPath, TMethod>(serviceArguments),
+	).pipe(sessionAuth.withSessionAuth());
+};
+
+// CSR cache
+const csrCache = createCsrCache<CacheNames>();
+
+export const callApiClientCache = <
+	R,
+	TPath extends keyof paths = keyof paths,
+	TMethod extends keyof paths[TPath] & string = keyof paths[TPath] & string,
+>(
+	serviceArguments: ServiceArguments<paths, TPath, TMethod, R>,
 	cacheForService: CacheForService<CacheNames>,
-) {
-	return callApiSsrCache<Paths, R, CacheNames>({
-		baseUrl: apiUrl,
-		serviceArguments,
-		cacheForService,
-		headersProvider,
-		onServer401: redirectToUnauthorizedOnServer401,
+): Observable<R> => {
+	return csrCache.callApiCsrCache(callApi, serviceArguments, cacheForService);
+};
+
+export const removeCsrCache = csrCache.removeCsrCache;
+
+export const callApiServerCache = <
+	R,
+	TPath extends keyof paths = keyof paths,
+	TMethod extends keyof paths[TPath] & string = keyof paths[TPath] & string,
+>(
+	serviceArguments: ServiceArguments<paths, TPath, TMethod, R>,
+	cacheForService: CacheForService<CacheNames>,
+): Observable<R> => {
+	if (typeof window !== "undefined") {
+		return callApiClientCache(serviceArguments, cacheForService);
+	}
+
+	return new Observable<R>((subscriber) => {
+		let closed = false;
+
+		import("@byeolnaerim/typed-rx-http/next")
+			.then(({ callApiSsrCache }) => {
+				if (closed) {
+					return;
+				}
+
+				const subscription = callApiSsrCache<paths, R, CacheNames>({
+					baseUrl: process.env.NEXT_PUBLIC_API_URL || "",
+					serviceArguments: serviceArguments as ServiceArguments<
+						paths,
+						keyof paths,
+						keyof paths[keyof paths] & string,
+						R
+					>,
+					cacheForService,
+					headersProvider,
+					onServer401: redirectToUnauthorizedOnServer401,
+				}).subscribe(subscriber);
+
+				subscriber.add(() => {
+					closed = true;
+					subscription.unsubscribe();
+				});
+			})
+			.catch((error) => {
+				if (!closed) {
+					subscriber.error(error);
+				}
+			});
+
+		return () => {
+			closed = true;
+		};
 	});
-}
+};
 ```
 
 ---
