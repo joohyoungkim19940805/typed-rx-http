@@ -42,10 +42,41 @@
 			"types": "./dist/rsocket.d.ts",
 			"import": "./dist/rsocket.js",
 			"require": "./dist/rsocket.cjs"
+		},
+		"./auto-node-script/openapi": {
+			"import": "./auto-node-script/openapi/index.mjs",
+			"require": "./auto-node-script/openapi/index.cjs",
+			"default": "./auto-node-script/openapi/index.mjs"
+		},
+		"./auto-node-script/openapi/generateSwagger": {
+			"import": "./auto-node-script/openapi/generateSwagger.mjs",
+			"require": "./auto-node-script/openapi/generateSwagger.cjs",
+			"default": "./auto-node-script/openapi/generateSwagger.mjs"
+		},
+		"./auto-node-script/openapi/generateSwaggerXxxService": {
+			"import": "./auto-node-script/openapi/generateSwaggerXxxService.mjs",
+			"require": "./auto-node-script/openapi/generateSwaggerXxxService.cjs",
+			"default": "./auto-node-script/openapi/generateSwaggerXxxService.mjs"
+		},
+		"./auto-node-script/asyncapi-rsocket": {
+			"import": "./auto-node-script/asyncapi-rsocket/index.mjs",
+			"require": "./auto-node-script/asyncapi-rsocket/index.cjs",
+			"default": "./auto-node-script/asyncapi-rsocket/index.mjs"
+		},
+		"./auto-node-script/asyncapi-rsocket/generateAsyncApiRSocket": {
+			"import": "./auto-node-script/asyncapi-rsocket/generateAsyncApiRSocket.mjs",
+			"require": "./auto-node-script/asyncapi-rsocket/generateAsyncApiRSocket.cjs",
+			"default": "./auto-node-script/asyncapi-rsocket/generateAsyncApiRSocket.mjs"
+		},
+		"./auto-node-script/asyncapi-rsocket/generateAsyncApiRSocketXxxService": {
+			"import": "./auto-node-script/asyncapi-rsocket/generateAsyncApiRSocketXxxService.mjs",
+			"require": "./auto-node-script/asyncapi-rsocket/generateAsyncApiRSocketXxxService.cjs",
+			"default": "./auto-node-script/asyncapi-rsocket/generateAsyncApiRSocketXxxService.mjs"
 		}
 	},
 	"files": [
-		"dist"
+		"dist",
+		"auto-node-script"
 	],
 	"scripts": {
 		"build": "tsup",
@@ -53,7 +84,7 @@
 		"prepack": "npm run build"
 	},
 	"dependencies": {
-		"rxjs": "^7.8.2"
+		"rxjs": ">=7"
 	},
 	"devDependencies": {
 		"next": "^16.1.6",
@@ -87,5 +118,9 @@
 		"rsocket-core": "^0.0.29-alpha.0",
 		"rsocket-types": "^0.0.29-alpha.0",
 		"rsocket-websocket-client": "^0.0.29-alpha.0"
+	},
+	"bin": {
+		"typed-rx-http-openapi-watch": "./auto-node-script/openapi/generateSwagger.cjs",
+		"typed-rx-http-rsocket-watch": "./auto-node-script/asyncapi-rsocket/generateAsyncApiRSocket.cjs"
 	}
 }
