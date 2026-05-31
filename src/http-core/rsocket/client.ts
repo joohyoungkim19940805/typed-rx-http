@@ -89,30 +89,40 @@ export interface RSocketOperationLike {
 	response?: unknown;
 }
 
-export type RSocketOperationsLike = Record<string, RSocketOperationLike>;
+export type RSocketOperationsLike = object;
 
-export type RSocketRoute<Operations extends RSocketOperationsLike> = Extract<
+export type RSocketRoute<Operations extends RSocketOperationsLike> = [Extract<
 	keyof Operations,
 	string
->;
+>] extends [never]
+	? string
+	: Extract<keyof Operations, string>;
+
+type RSocketOperationProperty<
+	Operations extends RSocketOperationsLike,
+	TRoute extends RSocketRoute<Operations>,
+	TProperty extends string,
+> = TRoute extends keyof Operations
+	? TProperty extends keyof Operations[TRoute]
+		? Operations[TRoute][TProperty]
+		: unknown
+	: unknown;
 
 export type RSocketOperationRequest<
 	Operations extends RSocketOperationsLike,
 	TRoute extends RSocketRoute<Operations>,
-> = Operations[TRoute] extends { request: infer Request } ? Request : unknown;
+> = RSocketOperationProperty<Operations, TRoute, "request">;
 
 export type RSocketOperationResponse<
 	Operations extends RSocketOperationsLike,
 	TRoute extends RSocketRoute<Operations>,
-> = Operations[TRoute] extends { response: infer Response }
-	? Response
-	: unknown;
+> = RSocketOperationProperty<Operations, TRoute, "response">;
 
 export type RSocketOperationInteraction<
 	Operations extends RSocketOperationsLike,
 	TRoute extends RSocketRoute<Operations>,
-> = Operations[TRoute] extends { interaction: infer Interaction }
-	? Interaction
+> = RSocketOperationProperty<Operations, TRoute, "interaction"> extends string
+	? RSocketOperationProperty<Operations, TRoute, "interaction">
 	: string;
 
 export type RSocketRoutesByInteraction<
@@ -387,7 +397,7 @@ export class RSocketApi<
 		TRoute extends RSocketStreamRoute<Operations> & RSocketRoute<Operations>,
 	>(
 		route: TRoute,
-		...args: RSocketRequestArgs<Operations, TRoute>
+		data?: RSocketOperationRequest<Operations, TRoute>,
 	): Observable<RSocketOperationResponse<Operations, TRoute>>;
 	stream<R = unknown>(route: string, data?: unknown): Observable<R>;
 	stream(route: string, data?: unknown): Observable<unknown> {
@@ -425,7 +435,7 @@ export class RSocketApi<
 		TRoute extends RSocketMonoRoute<Operations> & RSocketRoute<Operations>,
 	>(
 		route: TRoute,
-		...args: RSocketRequestArgs<Operations, TRoute>
+		data?: RSocketOperationRequest<Operations, TRoute>,
 	): Observable<RSocketOperationResponse<Operations, TRoute>>;
 	mono<R = unknown>(route: string, data?: unknown): Observable<R>;
 	mono(route: string, data?: unknown): Observable<unknown> {

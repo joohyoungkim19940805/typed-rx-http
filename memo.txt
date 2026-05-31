@@ -1,6 +1,6 @@
 라이브러리에서 pack 생성
 npm run build
-npm pack
+npm pack 
 
 버전 올리기
 npm version patch
