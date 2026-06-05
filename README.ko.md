@@ -24,6 +24,103 @@ npm i @byeolnaerim/typed-rx-http rxjs
 
 ---
 
+## Auto Node Script: OpenAPI/Swagger 코드 생성(선택)
+
+이 패키지는 런타임 HTTP 클라이언트와 별도로, OpenAPI/Swagger JSON에서 타입/서비스 코드를 생성하는 Node 스크립트를 함께 제공합니다. 이 스크립트는 **선택 기능**입니다.
+
+일반적인 `@byeolnaerim/typed-rx-http`, `/next`, `/rsocket` 사용자는 이 스크립트를 실행하지 않아도 되며, `openapi-typescript`를 설치할 필요도 없습니다.
+
+```ts
+import {
+	connectToSwaggerEventStream,
+	generateSwaggerFromHttp,
+	generateSwaggerFromFile,
+} from "@byeolnaerim/typed-rx-http/auto-node-script/openapi";
+```
+
+### 의존성 격리
+
+OpenAPI 타입 생성에는 `openapi-typescript` CLI가 필요합니다. 하지만 이 패키지는 `openapi-typescript`를 일반 `dependencies`에 넣지 않습니다.
+
+`@byeolnaerim/typed-rx-http` 라이브러리 자체는 `devDependencies.typescript`로 TypeScript 6.0.3을 사용합니다. `typed-rx-http`, `/next`, `/rsocket` 엔트리포인트와 라이브러리 빌드는 이 TypeScript 6.0.3 기준을 유지합니다.
+
+다만 `openapi-typescript`는 아직 특정 TypeScript 5.x 버전을 요구할 수 있으므로, OpenAPI auto node script만 별도의 npx 임시 실행 환경에서 `openapi-typescript`와 `typescript@5.9.3`을 같이 실행합니다. 이 임시 실행 환경은 라이브러리의 `devDependencies.typescript` 6.0.3을 바꾸지 않고, 사용자의 프로젝트에 설치된 `typescript`나 `openapi-typescript` 버전도 사용하지 않습니다.
+
+기본값은 auto script 실행 시점에만 아래 명령을 생성해서 실행하는 것입니다.
+
+```bash
+npx -y -p openapi-typescript@latest -p typescript@5.9.3 openapi-typescript swagger.json --output ./src/handler/service/@types/ApiTypes.d.ts
+```
+
+따라서 사용법 자체는 바뀌지 않습니다. 기존처럼 auto node script를 호출하면 되고, OpenAPI 타입 생성 단계에서만 격리된 TypeScript 5.9.3 환경이 사용됩니다. auto script를 쓰지 않는 사용자는 `openapi-typescript`나 TypeScript 5.9.3에 전혀 묶이지 않습니다.
+
+필요하면 `openApiTypescriptCommand`로 명령을 직접 고정할 수 있습니다.
+
+```ts
+generateSwaggerFromFile({
+	inputFile: "./swagger.json",
+	openApiTypescriptCommand:
+		"npx -y -p openapi-typescript@7.0.0 -p typescript@5.9.3 openapi-typescript ./swagger.json --output ./src/handler/service/@types/ApiTypes.d.ts",
+});
+```
+
+또는 기본 명령을 구성하는 패키지 버전만 바꿀 수도 있습니다.
+
+```ts
+generateSwaggerFromFile({
+	inputFile: "./swagger.json",
+	openApiTypescriptPackage: "openapi-typescript@7.0.0",
+	openApiTypescriptTypescriptPackage: "typescript@5.9.3",
+});
+```
+
+### 생성되는 파일
+
+기본 설정은 아래 파일들을 생성합니다.
+
+```txt
+swagger.json
+src/handler/service/@types/ApiTypes.d.ts
+src/handler/service/auto/*Service.ts
+src/handler/service/@types/auto/*Types.ts
+src/handler/service/apiUnionArrays.ts
+```
+
+`apiUnionArrays.ts`는 OpenAPI schema enum뿐 아니라 `query`, `path`, `header`, `cookie` parameter enum도 상수 배열로 생성합니다. 배열 query parameter의 `items.enum`도 처리합니다.
+
+### EventStream 감시
+
+```ts
+connectToSwaggerEventStream({
+	hostname: "localhost",
+	port: 8788,
+	path: "/oauth2/for-local/get-swagger",
+	serviceDir: "./src/handler/service",
+	typesDir: "./src/handler/service/@types",
+	commonServiceFile: "./src/handler/service/rxjsHttpService.ts",
+});
+```
+
+### HTTP 1회 요청
+
+```ts
+await generateSwaggerFromHttp({
+	hostname: "localhost",
+	port: 8788,
+	path: "/oauth2/for-local/get-swagger",
+});
+```
+
+### 로컬 파일에서 생성
+
+```ts
+generateSwaggerFromFile({
+	inputFile: "./swagger.json",
+});
+```
+
+---
+
 ## 엔트리포인트
 
 ### Core (프레임워크 독립)

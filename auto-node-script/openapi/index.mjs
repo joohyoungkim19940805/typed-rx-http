@@ -7,6 +7,7 @@ export const parseJsonResponseText = mod.parseJsonResponseText;
 export const requestJsonOnce = mod.requestJsonOnce;
 export const generateSwaggerFromHttp = mod.generateSwaggerFromHttp;
 export const generateSwaggerFromFile = mod.generateSwaggerFromFile;
+export const createOpenApiTypescriptCommand = mod.createOpenApiTypescriptCommand;
 export const generateTypes = mod.generateTypes;
 export const generateUnionArrays = mod.generateUnionArrays;
 export const handleSwaggerData = mod.handleSwaggerData;

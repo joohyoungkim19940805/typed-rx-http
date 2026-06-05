@@ -4,6 +4,18 @@ Node-only generators for projects that use `@byeolnaerim/typed-rx-http`.
 
 These modules are intentionally separate from the browser/runtime entry points. They use Node APIs such as `http`, `https`, `fs`, and `child_process`.
 
+## TypeScript and OpenAPI dependency isolation
+
+The library itself uses `typescript@6.0.3` in `devDependencies`. The core HTTP client, the Next.js adapter, and the RSocket adapter are not tied to `openapi-typescript` or TypeScript 5.x.
+
+Only the OpenAPI generator needs `openapi-typescript`. By default it runs that tool in an isolated temporary npx environment with `typescript@5.9.3`:
+
+```bash
+npx -y -p openapi-typescript@latest -p typescript@5.9.3 openapi-typescript swagger.json --output ./src/handler/service/@types/ApiTypes.d.ts
+```
+
+This command is created internally by the OpenAPI generator. It does not install `openapi-typescript` into this package's regular dependencies, does not change the library's TypeScript 6.0.3 dev dependency, and does not depend on the user's locally installed `typescript` or `openapi-typescript` versions.
+
 ## OpenAPI / Swagger
 
 ### EventStream watcher
