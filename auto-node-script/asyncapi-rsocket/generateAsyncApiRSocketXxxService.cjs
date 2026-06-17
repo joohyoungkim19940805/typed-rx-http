@@ -227,6 +227,58 @@ function isPlainObject(value) {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function isSafeTsPropertyName(name) {
+	return isValidTsIdentifier(name) && !RESERVED_TS_IDENTIFIER_NAMES.has(name);
+}
+
+function toPropertyAccess(name) {
+	return isSafeTsPropertyName(name)
+		? `.${name}`
+		: `[${JSON.stringify(name)}]`;
+}
+
+function toPropertyKey(name) {
+	return isSafeTsPropertyName(name) ? name : JSON.stringify(name);
+}
+
+function schemaToInlineType(schema, asyncapiData) {
+	if (!schema) return "unknown";
+
+	if (schema.$ref) {
+		return schemaToInlineType(resolveRef(schema.$ref, asyncapiData), asyncapiData);
+	}
+
+	if (Array.isArray(schema.allOf)) {
+		const meaningfulItems = schema.allOf.filter(
+			(item) => isPlainObject(item) && !item["x-paramName"],
+		);
+		const itemTypes = meaningfulItems.map((item) => schemaToInlineType(item, asyncapiData));
+		return itemTypes.length > 0 ? itemTypes.join(" & ") : "unknown";
+	}
+
+	if (Array.isArray(schema.oneOf)) {
+		return schema.oneOf.map((item) => schemaToInlineType(item, asyncapiData)).join(" | ") || "unknown";
+	}
+
+	if (Array.isArray(schema.anyOf)) {
+		return schema.anyOf.map((item) => schemaToInlineType(item, asyncapiData)).join(" | ") || "unknown";
+	}
+
+	if (schema.type === "integer" || schema.type === "number") return "number";
+	if (schema.type === "boolean") return "boolean";
+	if (schema.type === "string") return "string";
+	if (schema.type === "array") return `${schemaToInlineType(schema.items || {}, asyncapiData)}[]`;
+
+	return "unknown";
+}
+
+function getChannelPathParams(channel, asyncapiData) {
+	return Object.entries(channel.parameters || {}).map(([name, parameter]) => ({
+		name,
+		type: schemaToInlineType(parameter?.schema || {}, asyncapiData),
+	}));
+}
+
 function getMessagePayload(messageRefOrObject, asyncapiData) {
 	const message = getMessage(messageRefOrObject, asyncapiData);
 	return message?.payload || null;
@@ -285,6 +337,7 @@ function getRSocketEntries(asyncapiData) {
 				controller: publishMeta.controller || responseMeta.controller || routeMeta.controller,
 				method: publishMeta.method || responseMeta.method || routeMeta.method,
 				requestOptional: isEmptySchema(requestPayload, asyncapiData),
+				pathParams: getChannelPathParams(channel, asyncapiData),
 			};
 		})
 		.sort((a, b) => {
@@ -294,19 +347,85 @@ function getRSocketEntries(asyncapiData) {
 		});
 }
 
+function buildPathParamType(pathParams) {
+	if (!pathParams || pathParams.length === 0) return null;
+
+	return `{\n${pathParams
+		.map((param) => `\t\t${toPropertyKey(param.name)}: ${param.type};`)
+		.join("\n")}\n\t}`;
+}
+
+function escapeTemplateLiteralText(value) {
+	return String(value)
+		.replace(/\\/g, "\\\\")
+		.replace(/`/g, "\\`")
+		.replace(/\$\{/g, "\\${");
+}
+
+function buildResolvedDestinationExpression(entry) {
+	const pathParams = entry.pathParams || [];
+	if (pathParams.length === 0) {
+		return JSON.stringify(entry.destination);
+	}
+
+	const pathParamNames = new Set(pathParams.map((param) => param.name));
+	const parts = [];
+	const pattern = /\{([^{}]+)\}/g;
+	let lastIndex = 0;
+	let match;
+
+	while ((match = pattern.exec(entry.destination)) !== null) {
+		const paramName = match[1];
+
+		parts.push(escapeTemplateLiteralText(entry.destination.slice(lastIndex, match.index)));
+
+		if (pathParamNames.has(paramName)) {
+			parts.push(`\${String(path${toPropertyAccess(paramName)})}`);
+		} else {
+			parts.push(escapeTemplateLiteralText(match[0]));
+		}
+
+		lastIndex = match.index + match[0].length;
+	}
+
+	parts.push(escapeTemplateLiteralText(entry.destination.slice(lastIndex)));
+
+	return `\`${parts.join("")}\``;
+}
+
 function buildFunctionCode(entry) {
 	const functionName = getFunctionName(entry);
 	const typeAliasBase = getTypeAliasBase(functionName);
 	const requestType = `${typeAliasBase}Request`;
-	const responseType = `${typeAliasBase}Response`;
 	const callerName = entry.interaction === "requestStream" ? "callRSocketStream" : "callRSocketMono";
 	const destinationLiteral = JSON.stringify(entry.destination);
+	const pathParams = entry.pathParams || [];
+	const hasPathParams = pathParams.length > 0;
+	const hasBody = !entry.requestOptional;
+	const pathType = buildPathParamType(pathParams);
 
-	if (entry.requestOptional) {
+	if (!hasPathParams && !hasBody) {
 		return `export const ${functionName} = () => {\n\treturn ${callerName}<${destinationLiteral}>(${destinationLiteral});\n};`;
 	}
 
-	return `export const ${functionName} = ({\n\tbody,\n}: {\n\tbody: ${requestType};\n}) => {\n\treturn ${callerName}<${destinationLiteral}>(${destinationLiteral}, body);\n};`;
+	const params = [];
+	const typeLines = [];
+	if (hasPathParams) {
+		params.push("path");
+		typeLines.push(`\tpath: ${pathType};`);
+	}
+	if (hasBody) {
+		params.push("body");
+		typeLines.push(`\tbody: ${requestType};`);
+	}
+
+	const routeLine = hasPathParams
+		? `\n\tconst route = ${buildResolvedDestinationExpression(entry)};\n`
+		: "";
+	const destinationArg = hasPathParams ? "route" : destinationLiteral;
+	const bodyArg = hasBody ? ", body" : "";
+
+	return `export const ${functionName} = ({\n\t${params.join(",\n\t")},\n}: {\n${typeLines.join("\n")}\n}) => {${routeLine}\n\treturn ${callerName}<${destinationLiteral}>(${destinationArg}${bodyArg});\n};`;
 }
 
 function buildTypesFileContent({ entries, asyncApiTypesImportPath }) {
