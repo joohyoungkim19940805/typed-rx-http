@@ -422,7 +422,7 @@ function buildFunctionCode(entry) {
 	const routeLine = hasPathParams
 		? `\n\tconst route = ${buildResolvedDestinationExpression(entry)};\n`
 		: "";
-	const destinationArg = hasPathParams ? "route" : destinationLiteral;
+	const destinationArg = hasPathParams ? `route as ${destinationLiteral}` : destinationLiteral;
 	const bodyArg = hasBody ? ", body" : "";
 
 	return `export const ${functionName} = ({\n\t${params.join(",\n\t")},\n}: {\n${typeLines.join("\n")}\n}) => {${routeLine}\n\treturn ${callerName}<${destinationLiteral}>(${destinationArg}${bodyArg});\n};`;

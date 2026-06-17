@@ -5,7 +5,7 @@ const path = require("path");
 const { generateAsyncApiRSocketServices } = require("./generateAsyncApiRSocketXxxService.cjs");
 
 const SERVICE_DIR = "./src/handler/service";
-const ASYNC_API_RSOCKET_FILE = "./asyncapi-rosket.json"; // 저장할 AsyncAPI RSocket 파일 경로
+const ASYNC_API_RSOCKET_FILE = "./asyncapi-rsocket.json"; // 저장할 AsyncAPI RSocket 파일 경로
 const TYPES_DIR = "./src/handler/service/@types";
 const TYPES_FILE = TYPES_DIR + "/AsyncApiTypes.ts";
 const COMMON_RSOCKET_SERVICE_FILE = SERVICE_DIR + "/rsoketCommonService.ts";
@@ -45,20 +45,12 @@ const PRIMITIVE_JAVA_TYPE_MAP = {
 	"java.math.BigInteger": "number",
 };
 
-// 디렉토리가 없으면 생성
-if (!fs.existsSync(TYPES_DIR)) {
-	fs.mkdirSync(TYPES_DIR, { recursive: true });
-}
-
-if (!fs.existsSync(SERVICE_DIR)) {
-	fs.mkdirSync(SERVICE_DIR, { recursive: true });
-}
 
 // 서버와 연결 설정
 const options = {
 	hostname: "localhost", // 서버 주소
 	port: 8123, // 서버 포트
-	path: "/for-local/get-asyncapi-rosket", // EventStream 경로
+	path: "/for-local/get-asyncapi-rsocket", // EventStream 경로
 	method: "GET",
 	headers: {
 		Accept: "text/event-stream",
@@ -486,13 +478,13 @@ function generateAsyncApiTypes(asyncapiData, sourceName = ASYNC_API_RSOCKET_FILE
 const DEFAULT_OPTIONS = {
 	hostname: "localhost",
 	port: 8123,
-	path: "/for-local/get-asyncapi-rosket",
+	path: "/for-local/get-asyncapi-rsocket",
 	method: "GET",
 	headers: {
 		Accept: "text/event-stream",
 	},
 	serviceDir: "./src/handler/service",
-	asyncApiRSocketFile: "./asyncapi-rosket.json",
+	asyncApiRSocketFile: "./asyncapi-rsocket.json",
 	typesDir: "./src/handler/service/@types",
 	typesFile: "./src/handler/service/@types/AsyncApiTypes.ts",
 	commonRSocketServiceFile: "./src/handler/service/rsoketCommonService.ts",
@@ -707,7 +699,9 @@ function connectToAsyncApiRSocketEventStream(rawOptions = {}) {
 	function connect() {
 		options.log.log?.("Attempting to connect to AsyncAPI RSocket EventStream...");
 
-		req = http.request(
+		const requestLib = options.protocol === "https:" || options.https ? https : http;
+
+		req = requestLib.request(
 			createRequestOptions(options),
 			(res) => {
 				if (res.statusCode !== 200) {

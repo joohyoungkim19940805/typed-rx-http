@@ -4,7 +4,6 @@
 		"incremental": true,
 		"isolatedModules": true,
 		"noImplicitAny": false,
-		"baseUrl": ".",
 		"plugins": [
 			{
 				"name": "next"
