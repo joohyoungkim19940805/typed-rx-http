@@ -1,5 +1,4 @@
 /// <reference path="./rsocket-shims.d.ts" />
-import { Buffer } from "buffer";
 import {
 	BufferEncoders,
 	IdentitySerializer,
@@ -7,17 +6,30 @@ import {
 	MESSAGE_RSOCKET_COMPOSITE_METADATA,
 	MESSAGE_RSOCKET_ROUTING,
 	RSocketClient,
+	createBuffer,
 	encodeBearerAuthMetadata,
 	encodeCompositeMetadata,
 	encodeRoute,
+	toBuffer,
 } from "rsocket-core";
 import RSocketWebSocketClient from "rsocket-websocket-client";
 import { Observable } from "rxjs";
 
 export type RSocketConnectionStatus = "CONNECTED" | "CONNECTING" | "CLOSED";
 
+export interface RSocketBuffer extends Uint8Array {
+	readonly length: number;
+	copy(
+		target: Uint8Array,
+		targetStart?: number,
+		sourceStart?: number,
+		sourceEnd?: number,
+	): number;
+	toString(encoding?: string, start?: number, end?: number): string;
+}
+
 export interface RSocketJsonCodec {
-	encode(data?: unknown): Buffer;
+	encode(data?: unknown): RSocketBuffer;
 	decode(raw: unknown): unknown;
 }
 
@@ -36,9 +48,9 @@ export interface RSocketReconnectOptions extends RSocketConnectOptions {
 	jitter?: number;
 }
 
-export interface RSocketPayload<Data = Buffer> {
+export interface RSocketPayload<Data = RSocketBuffer> {
 	data: Data;
-	metadata?: Buffer;
+	metadata?: RSocketBuffer;
 }
 
 export interface RSocketSubscription {
@@ -46,7 +58,7 @@ export interface RSocketSubscription {
 	cancel(): void;
 }
 
-export interface ReactiveSocketLike<Data = Buffer> {
+export interface ReactiveSocketLike<Data = RSocketBuffer> {
 	requestStream(payload: RSocketPayload<Data>): {
 		subscribe(observer: {
 			onComplete?: () => void;
@@ -162,17 +174,29 @@ export type RSocketRequestArgs<
 			? [data?: RSocketOperationRequest<Operations, TRoute>]
 			: [data: RSocketOperationRequest<Operations, TRoute>];
 
+const emptyRSocketBuffer = (): RSocketBuffer =>
+	createBuffer(0) as RSocketBuffer;
+
+const encodeRSocketBuffer = (value: string): RSocketBuffer =>
+	toBuffer(value, "utf8") as RSocketBuffer;
+
+const isBinaryData = (
+	raw: unknown,
+): raw is ArrayBuffer | ArrayBufferView =>
+	raw instanceof ArrayBuffer || ArrayBuffer.isView(raw);
+
 export const defaultRSocketJsonCodec: RSocketJsonCodec = {
 	encode(data?: unknown) {
-		if (data == null) return Buffer.alloc(0);
-		if (typeof data === "string") return Buffer.from(data, "utf8");
-		return Buffer.from(JSON.stringify(data), "utf8");
+		if (data == null) return emptyRSocketBuffer();
+		if (typeof data === "string") return encodeRSocketBuffer(data);
+		return encodeRSocketBuffer(JSON.stringify(data));
 	},
 	decode(raw: unknown) {
 		if (!raw) return null;
-		if (Buffer.isBuffer(raw)) {
-			if (raw.length === 0) return null;
-			const text = raw.toString("utf8");
+		if (isBinaryData(raw)) {
+			const buffer = toBuffer(raw) as RSocketBuffer;
+			if (buffer.length === 0) return null;
+			const text = buffer.toString("utf8");
 			try {
 				const parsed = JSON.parse(text);
 				if (typeof parsed !== "string") return parsed;
@@ -189,16 +213,18 @@ export const defaultRSocketJsonCodec: RSocketJsonCodec = {
 	},
 };
 
-const createAuthSetupMetadata = (jwt?: string): Buffer | undefined => {
+const createAuthSetupMetadata = (
+	jwt?: string,
+): RSocketBuffer | undefined => {
 	if (!jwt) return undefined;
 	return encodeCompositeMetadata([
 		[MESSAGE_RSOCKET_AUTHENTICATION, encodeBearerAuthMetadata(jwt)],
-	]);
+	]) as RSocketBuffer;
 };
 
 export const connectRSocket = async (
 	options: RSocketConnectOptions,
-): Promise<ReactiveSocketLike<Buffer>> => {
+): Promise<ReactiveSocketLike<RSocketBuffer>> => {
 	const client = new RSocketClient({
 		setup: {
 			keepAlive: options.keepAlive ?? 30_000,
@@ -206,9 +232,10 @@ export const connectRSocket = async (
 			dataMimeType: options.dataMimeType ?? "application/json",
 			metadataMimeType: MESSAGE_RSOCKET_COMPOSITE_METADATA.string,
 			payload: {
-				data: Buffer.alloc(0),
+				data: emptyRSocketBuffer(),
 				metadata:
-					createAuthSetupMetadata(options.jwt) ?? Buffer.alloc(0),
+					createAuthSetupMetadata(options.jwt) ??
+					emptyRSocketBuffer(),
 			},
 		},
 		serializers: {
@@ -221,23 +248,27 @@ export const connectRSocket = async (
 		),
 	});
 
-	return await new Promise<ReactiveSocketLike<Buffer>>((resolve, reject) => {
-		client.connect().subscribe({
-			onComplete: (rs: ReactiveSocketLike<Buffer>) => resolve(rs),
-			onError: reject,
-			onSubscribe: () => {},
-		});
-	});
+	return await new Promise<ReactiveSocketLike<RSocketBuffer>>(
+		(resolve, reject) => {
+			client.connect().subscribe({
+				onComplete: (rs: ReactiveSocketLike<RSocketBuffer>) =>
+					resolve(rs),
+				onError: reject,
+				onSubscribe: () => {},
+			});
+		},
+	);
 };
 
 export class RSocketReconnect {
-	private rsocket: ReactiveSocketLike<Buffer> | null = null;
+	private rsocket: ReactiveSocketLike<RSocketBuffer> | null = null;
 	private status: RSocketConnectionStatus = "CLOSED";
 	private retry = 0;
 	private manuallyClosed = false;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-	private connectingPromise: Promise<ReactiveSocketLike<Buffer>> | null =
-		null;
+	private connectingPromise: Promise<
+		ReactiveSocketLike<RSocketBuffer>
+	> | null = null;
 
 	private readonly maxRetry: number;
 	private readonly baseDelay: number;
@@ -255,7 +286,7 @@ export class RSocketReconnect {
 		return this.status;
 	}
 
-	async get(): Promise<ReactiveSocketLike<Buffer>> {
+	async get(): Promise<ReactiveSocketLike<RSocketBuffer>> {
 		this.manuallyClosed = false;
 		if (this.rsocket) return this.rsocket;
 		return this.connect();
@@ -269,7 +300,9 @@ export class RSocketReconnect {
 		return base + Math.floor(Math.random() * this.jitter);
 	}
 
-	private async connect(): Promise<ReactiveSocketLike<Buffer>> {
+	private async connect(): Promise<
+		ReactiveSocketLike<RSocketBuffer>
+	> {
 		if (this.rsocket) return this.rsocket;
 		if (this.connectingPromise) return this.connectingPromise;
 
@@ -372,8 +405,8 @@ export class RSocketApi<
 		this.maxRequest = options.maxRequest ?? 2_147_483_647;
 	}
 
-	private meta(route: string): Buffer {
-		const metadata: [any, Buffer][] = [];
+	private meta(route: string): RSocketBuffer {
+		const metadata: [any, RSocketBuffer][] = [];
 
 		if (this.jwt) {
 			metadata.push([
@@ -383,11 +416,11 @@ export class RSocketApi<
 		}
 
 		metadata.push([MESSAGE_RSOCKET_ROUTING, encodeRoute(route)]);
-		return encodeCompositeMetadata(metadata);
+		return encodeCompositeMetadata(metadata) as RSocketBuffer;
 	}
 
 	private async withSocket<T>(
-		fn: (rs: ReactiveSocketLike<Buffer>) => T,
+		fn: (rs: ReactiveSocketLike<RSocketBuffer>) => T,
 	): Promise<T> {
 		const rs = await this.connector.get();
 		return fn(rs);
@@ -413,7 +446,7 @@ export class RSocketApi<
 				flowable.subscribe({
 					onComplete: () => subscriber.complete(),
 					onError: (err: unknown) => subscriber.error(err),
-					onNext: (payload: RSocketPayload<Buffer>) => {
+					onNext: (payload: RSocketPayload<RSocketBuffer>) => {
 						subscriber.next(this.codec.decode(payload.data));
 					},
 					onSubscribe: (nextSubscription: RSocketSubscription) => {
@@ -445,7 +478,9 @@ export class RSocketApi<
 					data: this.codec.encode(data),
 					metadata: this.meta(route),
 				}).subscribe({
-					onComplete: (payload: RSocketPayload<Buffer>) => {
+					onComplete: (
+						payload: RSocketPayload<RSocketBuffer>,
+					) => {
 						subscriber.next(this.codec.decode(payload.data));
 						subscriber.complete();
 					},

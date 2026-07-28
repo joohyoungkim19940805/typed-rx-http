@@ -22,105 +22,6 @@
 npm i @byeolnaerim/typed-rx-http rxjs
 ```
 
----
-
-## Auto Node Script: OpenAPI/Swagger code generation (optional)
-
-This package also ships Node scripts that generate TypeScript types and service files from an OpenAPI/Swagger JSON document. These scripts are **optional**.
-
-Regular users of `@byeolnaerim/typed-rx-http`, `/next`, or `/rsocket` do not need to run these scripts and do not need to install `openapi-typescript`.
-
-```ts
-import {
-	connectToSwaggerEventStream,
-	generateSwaggerFromHttp,
-	generateSwaggerFromFile,
-} from "@byeolnaerim/typed-rx-http/auto-node-script/openapi";
-```
-
-### Dependency isolation
-
-OpenAPI type generation requires the `openapi-typescript` CLI. However, this package does **not** include `openapi-typescript` in its regular `dependencies`.
-
-The `@byeolnaerim/typed-rx-http` library itself uses TypeScript 6.0.3 in `devDependencies.typescript`. The core `typed-rx-http`, `/next`, and `/rsocket` entry points, as well as the library build, keep using that TypeScript 6.0.3 setup.
-
-However, `openapi-typescript` may still require a specific TypeScript 5.x version. For that reason, only the OpenAPI auto node script runs `openapi-typescript` together with `typescript@5.9.3` in a separate temporary npx execution environment. This does not change the library's `devDependencies.typescript` 6.0.3 and does not use the `typescript` or `openapi-typescript` version installed in the user's project.
-
-By default, the auto script builds and runs this command only during OpenAPI generation:
-
-```bash
-npx -y -p openapi-typescript@latest -p typescript@5.9.3 openapi-typescript swagger.json --output ./src/handler/service/@types/ApiTypes.d.ts
-```
-
-So the usage itself does not change. You call the same auto node script as before, and only the OpenAPI type generation step uses the isolated TypeScript 5.9.3 environment. Users who do not use the auto script are not tied to `openapi-typescript` or TypeScript 5.9.3 at all.
-
-You can pin or replace the command with `openApiTypescriptCommand`.
-
-```ts
-generateSwaggerFromFile({
-	inputFile: "./swagger.json",
-	openApiTypescriptCommand:
-		"npx -y -p openapi-typescript@7.0.0 -p typescript@5.9.3 openapi-typescript ./swagger.json --output ./src/handler/service/@types/ApiTypes.d.ts",
-});
-```
-
-Or override only the package versions used to build the default command.
-
-```ts
-generateSwaggerFromFile({
-	inputFile: "./swagger.json",
-	openApiTypescriptPackage: "openapi-typescript@7.0.0",
-	openApiTypescriptTypescriptPackage: "typescript@5.9.3",
-});
-```
-
-### Generated files
-
-The default setup generates these files:
-
-```txt
-swagger.json
-src/handler/service/@types/ApiTypes.d.ts
-src/handler/service/auto/*Service.ts
-src/handler/service/@types/auto/*Types.ts
-src/handler/service/apiUnionArrays.ts
-```
-
-`apiUnionArrays.ts` generates readonly constant arrays from OpenAPI schema enums and from `query`, `path`, `header`, and `cookie` parameter enums. It also handles `items.enum` for array query parameters.
-
-### Watch an EventStream
-
-```ts
-connectToSwaggerEventStream({
-	hostname: "localhost",
-	port: 8788,
-	path: "/oauth2/for-local/get-swagger",
-	serviceDir: "./src/handler/service",
-	typesDir: "./src/handler/service/@types",
-	commonServiceFile: "./src/handler/service/rxjsHttpService.ts",
-});
-```
-
-### One-shot HTTP request
-
-```ts
-await generateSwaggerFromHttp({
-	hostname: "localhost",
-	port: 8788,
-	path: "/oauth2/for-local/get-swagger",
-});
-```
-
-### Generate from a local file
-
-```ts
-generateSwaggerFromFile({
-	inputFile: "./swagger.json",
-});
-```
-
----
-
 ## Entry points
 
 ### Core (framework-agnostic)
@@ -733,3 +634,103 @@ Options:
 - SSE uses `EventSource`.
 
 Most modern browsers and Next.js runtimes provide these. For custom Node runtimes, polyfills may be required.
+
+
+---
+
+## Auto Node Script: OpenAPI/Swagger code generation (optional)
+
+This package also ships Node scripts that generate TypeScript types and service files from an OpenAPI/Swagger JSON document. These scripts are **optional**.
+
+Regular users of `@byeolnaerim/typed-rx-http`, `/next`, or `/rsocket` do not need to run these scripts and do not need to install `openapi-typescript`.
+
+```ts
+import {
+	connectToSwaggerEventStream,
+	generateSwaggerFromHttp,
+	generateSwaggerFromFile,
+} from "@byeolnaerim/typed-rx-http/auto-node-script/openapi";
+```
+
+### Dependency isolation
+
+OpenAPI type generation requires the `openapi-typescript` CLI. However, this package does **not** include `openapi-typescript` in its regular `dependencies`.
+
+The `@byeolnaerim/typed-rx-http` library itself uses TypeScript 6.0.3 in `devDependencies.typescript`. The core `typed-rx-http`, `/next`, and `/rsocket` entry points, as well as the library build, keep using that TypeScript 6.0.3 setup.
+
+However, `openapi-typescript` may still require a specific TypeScript 5.x version. For that reason, only the OpenAPI auto node script runs `openapi-typescript` together with `typescript@5.9.3` in a separate temporary npx execution environment. This does not change the library's `devDependencies.typescript` 6.0.3 and does not use the `typescript` or `openapi-typescript` version installed in the user's project.
+
+By default, the auto script builds and runs this command only during OpenAPI generation:
+
+```bash
+npx -y -p openapi-typescript@latest -p typescript@5.9.3 openapi-typescript swagger.json --output ./src/handler/service/@types/ApiTypes.d.ts
+```
+
+So the usage itself does not change. You call the same auto node script as before, and only the OpenAPI type generation step uses the isolated TypeScript 5.9.3 environment. Users who do not use the auto script are not tied to `openapi-typescript` or TypeScript 5.9.3 at all.
+
+You can pin or replace the command with `openApiTypescriptCommand`.
+
+```ts
+generateSwaggerFromFile({
+	inputFile: "./swagger.json",
+	openApiTypescriptCommand:
+		"npx -y -p openapi-typescript@7.0.0 -p typescript@5.9.3 openapi-typescript ./swagger.json --output ./src/handler/service/@types/ApiTypes.d.ts",
+});
+```
+
+Or override only the package versions used to build the default command.
+
+```ts
+generateSwaggerFromFile({
+	inputFile: "./swagger.json",
+	openApiTypescriptPackage: "openapi-typescript@7.0.0",
+	openApiTypescriptTypescriptPackage: "typescript@5.9.3",
+});
+```
+
+### Generated files
+
+The default setup generates these files:
+
+```txt
+swagger.json
+src/handler/service/@types/ApiTypes.d.ts
+src/handler/service/auto/*Service.ts
+src/handler/service/@types/auto/*Types.ts
+src/handler/service/apiUnionArrays.ts
+```
+
+`apiUnionArrays.ts` generates readonly constant arrays from OpenAPI schema enums and from `query`, `path`, `header`, and `cookie` parameter enums. It also handles `items.enum` for array query parameters.
+
+### Watch an EventStream
+
+```ts
+connectToSwaggerEventStream({
+	hostname: "localhost",
+	port: 8788,
+	path: "/oauth2/for-local/get-swagger",
+	serviceDir: "./src/handler/service",
+	typesDir: "./src/handler/service/@types",
+	commonServiceFile: "./src/handler/service/rxjsHttpService.ts",
+});
+```
+
+### One-shot HTTP request
+
+```ts
+await generateSwaggerFromHttp({
+	hostname: "localhost",
+	port: 8788,
+	path: "/oauth2/for-local/get-swagger",
+});
+```
+
+### Generate from a local file
+
+```ts
+generateSwaggerFromFile({
+	inputFile: "./swagger.json",
+});
+```
+
+---

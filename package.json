@@ -90,7 +90,6 @@
 		"next": "^16.1.6",
 		"tsup": "^8.5.1",
 		"typescript": "6.0.3",
-		"buffer": "^6.0.3",
 		"rxjs": "^7.8.2",
 		"rsocket-core": "^0.0.29-alpha.0",
 		"rsocket-types": "^0.0.29-alpha.0",
@@ -98,9 +97,6 @@
 	},
 	"peerDependenciesMeta": {
 		"next": {
-			"optional": true
-		},
-		"buffer": {
 			"optional": true
 		},
 		"rsocket-core": {
@@ -114,7 +110,6 @@
 		}
 	},
 	"peerDependencies": {
-		"buffer": "^6.0.3",
 		"rsocket-core": "^0.0.29-alpha.0",
 		"rsocket-types": "^0.0.29-alpha.0",
 		"rsocket-websocket-client": "^0.0.29-alpha.0"

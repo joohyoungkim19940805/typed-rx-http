@@ -16,7 +16,6 @@ export default defineConfig({
   external: [
     "next",
     "next/*",
-    "buffer",
     "rsocket-core",
     "rsocket-types",
     "rsocket-websocket-client",
