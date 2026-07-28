@@ -56,8 +56,10 @@ import {
 Install RSocket peer packages only in projects that use this entrypoint.
 
 ```bash
-npm i buffer rsocket-core rsocket-types rsocket-websocket-client
+npm i rsocket-core rsocket-types rsocket-websocket-client
 ```
+
+> The RSocket adapter does not require the `buffer` package or a Buffer polyfill. Buffer creation is handled using the implementation selected by `rsocket-core`.
 
 ```ts
 import { createRSocketApi } from "@byeolnaerim/typed-rx-http/rsocket";

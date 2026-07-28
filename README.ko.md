@@ -56,8 +56,10 @@ import {
 RSocket을 쓰는 프로젝트에서만 peer 패키지를 설치하세요.
 
 ```bash
-npm i buffer rsocket-core rsocket-types rsocket-websocket-client
+npm i rsocket-core rsocket-types rsocket-websocket-client
 ```
+
+> RSocket 어댑터 사용을 위해 `buffer` 패키지나 Buffer 폴리필을 별도로 설치할 필요가 없습니다. Buffer 생성은 `rsocket-core`가 선택한 구현을 사용합니다.
 
 ```ts
 import { createRSocketApi } from "@byeolnaerim/typed-rx-http/rsocket";
