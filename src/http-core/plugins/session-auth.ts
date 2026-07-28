@@ -1,4 +1,3 @@
-// http-core/plugins/session-auth.ts
 import {
 	Observable,
 	catchError,
@@ -45,11 +44,14 @@ export const createSessionAuth = (opts: SessionAuthOptions) => {
 	} = opts;
 
 	let inFlightToken$: Observable<string> | null = null;
+	let inFlightRefresh$: Observable<string> | null = null;
 	let inFlightLogout$: Observable<any> | null = null;
 
 	const setAuth = (rawToken: string) => {
 		if (rawToken) {
-			headerStore.merge({ Authorization: formatAuthorization(rawToken) });
+			headerStore.merge({
+				Authorization: formatAuthorization(rawToken),
+			});
 			onLoginChange?.(true);
 		} else {
 			headerStore.remove("Authorization");
@@ -79,7 +81,10 @@ export const createSessionAuth = (opts: SessionAuthOptions) => {
 			finalize(() => {
 				inFlightToken$ = null;
 			}),
-			shareReplay({ bufferSize: 1, refCount: false }),
+			shareReplay({
+				bufferSize: 1,
+				refCount: false,
+			}),
 		);
 	};
 
@@ -91,35 +96,55 @@ export const createSessionAuth = (opts: SessionAuthOptions) => {
 		if (!inFlightToken$) {
 			inFlightToken$ = fetchToken$();
 		}
+
 		return inFlightToken$;
 	};
 
 	const refreshToken$ = (): Observable<string> => {
-		// refresh는 현재 Authorization 헤더가 있어야 의미가 있음
-		return ensureToken$().pipe(
-			switchMap((authHeader) => {
-				if (!authHeader) {
-					setAuth("");
-					return of("");
-				}
+		if (!inFlightRefresh$) {
+			inFlightRefresh$ = defer(() =>
+				ensureToken$().pipe(
+					switchMap((authHeader) => {
+						// refresh는 현재 Authorization 헤더가 있어야 의미가 있음
+						if (!authHeader) {
+							setAuth("");
+							return of("");
+						}
 
-				return fromFetch(refreshUrl, {
-					headers: { Authorization: authHeader },
-				}).pipe(
-					switchMap((res) => {
-						if (!res.ok) return Promise.reject(res);
-						return res.json() as Promise<TokenJson>;
+						return fromFetch(refreshUrl, {
+							headers: {
+								Authorization: authHeader,
+							},
+						}).pipe(
+							switchMap((res) => {
+								if (!res.ok) {
+									return Promise.reject(res);
+								}
+
+								return res.json() as Promise<TokenJson>;
+							}),
+							map((json) => json.token ?? ""),
+							tap((token) => setAuth(token)),
+							catchError((err) => {
+								console.error(err);
+								setAuth("");
+								return of("");
+							}),
+						);
 					}),
-					map((json) => json.token ?? ""),
-					tap((token) => setAuth(token)),
-					catchError((err) => {
-						console.error(err);
-						setAuth("");
-						return of("");
-					}),
-				);
-			}),
-		);
+				),
+			).pipe(
+				finalize(() => {
+					inFlightRefresh$ = null;
+				}),
+				shareReplay({
+					bufferSize: 1,
+					refCount: false,
+				}),
+			);
+		}
+
+		return inFlightRefresh$;
 	};
 
 	const sharedLogout$ = () => {
@@ -129,17 +154,22 @@ export const createSessionAuth = (opts: SessionAuthOptions) => {
 				finalize(() => {
 					inFlightLogout$ = null;
 				}),
-				shareReplay({ bufferSize: 1, refCount: false }),
+				shareReplay({
+					bufferSize: 1,
+					refCount: false,
+				}),
 			);
 		}
+
 		return inFlightLogout$;
 	};
 
 	/**
-	 *  callApi(...) 뒤에 .pipe(withSessionAuth())로 붙였다 떼기
+	 * callApi(...) 뒤에 .pipe(withSessionAuth())로 붙였다 떼기
 	 * - subscribe 시점에 ensureToken$ 먼저 수행(헤더 세팅)
-	 * - 401이면 refresh 1번 시도 후 원 소스 재구독
-	 * - refresh 실패/토큰 없음이면 logout 후 에러 throw
+	 * - 401이면 공유된 refresh를 1번 수행
+	 * - refresh 성공 후 각 원 요청을 개별적으로 1번 재시도
+	 * - refresh 실패/토큰 없음이면 공유된 logout 후 최초 401 전달
 	 */
 	const withSessionAuth = <T>(): MonoTypeOperatorFunction<T> => {
 		return (source) =>
@@ -147,30 +177,27 @@ export const createSessionAuth = (opts: SessionAuthOptions) => {
 				ensureToken$().pipe(
 					switchMap(() => source),
 					catchError((err) => {
-						// 401만 세션 로직 개입
-						if (isHttpResponseError(err) && err.status === 401) {
-							return refreshToken$().pipe(
-								switchMap((newToken) => {
-									if (!newToken) {
-										return sharedLogout$().pipe(
-											switchMap(() =>
-												throwError(() => err),
-											),
-										);
-									}
-									// refresh 성공 -> 원 요청 재시도
-									return source;
-								}),
-								catchError(() =>
-									sharedLogout$().pipe(
-										switchMap(() => throwError(() => err)),
-									),
-								),
-							);
+						if (
+							!isHttpResponseError(err) ||
+							err.status !== 401
+						) {
+							return throwError(() => err);
 						}
 
-						// 코어가 던진 HttpResponseError가 아니어도 그대로 전달
-						return throwError(() => err);
+						return refreshToken$().pipe(
+							switchMap((newToken) => {
+								if (!newToken) {
+									return sharedLogout$().pipe(
+										switchMap(() =>
+											throwError(() => err),
+										),
+									);
+								}
+
+								// 공유 refresh 성공 후 현재 요청만 개별 재시도
+								return source;
+							}),
+						);
 					}),
 				),
 			);
@@ -182,7 +209,11 @@ export const createSessionAuth = (opts: SessionAuthOptions) => {
 	 */
 	const withEnsureToken = <T>(): MonoTypeOperatorFunction<T> => {
 		return (source) =>
-			defer(() => ensureToken$().pipe(switchMap(() => source)));
+			defer(() =>
+				ensureToken$().pipe(
+					switchMap(() => source),
+				),
+			);
 	};
 
 	return {
