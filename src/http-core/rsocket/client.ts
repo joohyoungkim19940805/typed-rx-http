@@ -1,32 +1,20 @@
 /// <reference path="./rsocket-shims.d.ts" />
 import {
-	BufferEncoders,
 	IdentitySerializer,
 	MESSAGE_RSOCKET_AUTHENTICATION,
 	MESSAGE_RSOCKET_COMPOSITE_METADATA,
 	MESSAGE_RSOCKET_ROUTING,
 	RSocketClient,
-	createBuffer,
 	encodeBearerAuthMetadata,
 	encodeCompositeMetadata,
 	encodeRoute,
-	toBuffer,
 } from "rsocket-core";
 import RSocketWebSocketClient from "rsocket-websocket-client";
 import { Observable } from "rxjs";
 
 export type RSocketConnectionStatus = "CONNECTED" | "CONNECTING" | "CLOSED";
 
-export interface RSocketBuffer extends Uint8Array {
-	readonly length: number;
-	copy(
-		target: Uint8Array,
-		targetStart?: number,
-		sourceStart?: number,
-		sourceEnd?: number,
-	): number;
-	toString(encoding?: string, start?: number, end?: number): string;
-}
+export type RSocketBuffer = Uint8Array;
 
 export interface RSocketJsonCodec {
 	encode(data?: unknown): RSocketBuffer;
@@ -174,16 +162,74 @@ export type RSocketRequestArgs<
 			? [data?: RSocketOperationRequest<Operations, TRoute>]
 			: [data: RSocketOperationRequest<Operations, TRoute>];
 
-const emptyRSocketBuffer = (): RSocketBuffer =>
-	createBuffer(0) as RSocketBuffer;
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
+const toUint8Array = (raw: unknown): Uint8Array => {
+	if (raw instanceof ArrayBuffer) return new Uint8Array(raw);
+	if (ArrayBuffer.isView(raw)) {
+		return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+	}
+	throw new TypeError(
+		"RSocket binary value must be an ArrayBuffer or ArrayBufferView.",
+	);
+};
+
+const binaryEncoder = {
+	byteLength(value: unknown): number {
+		return toUint8Array(value).byteLength;
+	},
+	encode(
+		value: unknown,
+		buffer: Uint8Array,
+		start: number,
+		end: number,
+	): number {
+		buffer.set(toUint8Array(value).subarray(0, end - start), start);
+		return end;
+	},
+	decode(buffer: unknown, start: number, end: number): RSocketBuffer {
+		return toUint8Array(buffer).slice(start, end);
+	},
+};
+
+const utf8Encoder = {
+	byteLength(value: unknown): number {
+		if (typeof value !== "string") {
+			throw new TypeError("RSocket UTF-8 value must be a string.");
+		}
+		return textEncoder.encode(value).byteLength;
+	},
+	encode(
+		value: unknown,
+		buffer: Uint8Array,
+		start: number,
+		end: number,
+	): number {
+		if (typeof value !== "string") {
+			throw new TypeError("RSocket UTF-8 value must be a string.");
+		}
+		buffer.set(textEncoder.encode(value).subarray(0, end - start), start);
+		return end;
+	},
+	decode(buffer: unknown, start: number, end: number): string {
+		return textDecoder.decode(toUint8Array(buffer).subarray(start, end));
+	},
+};
+
+const rSocketEncoders = {
+	data: binaryEncoder,
+	dataMimeType: utf8Encoder,
+	message: utf8Encoder,
+	metadata: binaryEncoder,
+	metadataMimeType: utf8Encoder,
+	resumeToken: binaryEncoder,
+};
+
+const emptyRSocketBuffer = (): RSocketBuffer => new Uint8Array(0);
 
 const encodeRSocketBuffer = (value: string): RSocketBuffer =>
-	toBuffer(value, "utf8") as RSocketBuffer;
-
-const isBinaryData = (
-	raw: unknown,
-): raw is ArrayBuffer | ArrayBufferView =>
-	raw instanceof ArrayBuffer || ArrayBuffer.isView(raw);
+	textEncoder.encode(value);
 
 export const defaultRSocketJsonCodec: RSocketJsonCodec = {
 	encode(data?: unknown) {
@@ -193,10 +239,10 @@ export const defaultRSocketJsonCodec: RSocketJsonCodec = {
 	},
 	decode(raw: unknown) {
 		if (!raw) return null;
-		if (isBinaryData(raw)) {
-			const buffer = toBuffer(raw) as RSocketBuffer;
+		if (raw instanceof ArrayBuffer || ArrayBuffer.isView(raw)) {
+			const buffer = toUint8Array(raw);
 			if (buffer.length === 0) return null;
-			const text = buffer.toString("utf8");
+			const text = textDecoder.decode(buffer);
 			try {
 				const parsed = JSON.parse(text);
 				if (typeof parsed !== "string") return parsed;
@@ -244,7 +290,7 @@ export const connectRSocket = async (
 		},
 		transport: new RSocketWebSocketClient(
 			{ url: options.url },
-			BufferEncoders,
+			rSocketEncoders,
 		),
 	});
 
