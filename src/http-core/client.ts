@@ -92,11 +92,16 @@ export const createHttpClient = <Paths extends OpenApiPathsLike>(
 		defaultErrorMessage: defaultErrorMessageResolver,
 	} = opts;
 
-	const getBaseHeaders$ = () => {
-		if (headersProvider) return from(Promise.resolve(headersProvider()));
-		if (headerStore) return from(Promise.resolve(headerStore.get()));
-		return from(Promise.resolve({}));
-	};
+	const getBaseHeaders$ = () =>
+		defer(() => {
+			if (headersProvider) {
+				return from(Promise.resolve(headersProvider()));
+			}
+			if (headerStore) {
+				return from(Promise.resolve(headerStore.get()));
+			}
+			return from(Promise.resolve({}));
+		});
 
 	const resolveErrorMessage = (res: Response, data: unknown) => {
 		const apiMsg = (data as any)?.message;
