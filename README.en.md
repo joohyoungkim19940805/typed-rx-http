@@ -668,17 +668,7 @@ npx -y -p openapi-typescript@latest -p typescript@5.9.3 openapi-typescript swagg
 
 So the usage itself does not change. You call the same auto node script as before, and only the OpenAPI type generation step uses the isolated TypeScript 5.9.3 environment. Users who do not use the auto script are not tied to `openapi-typescript` or TypeScript 5.9.3 at all.
 
-You can pin or replace the command with `openApiTypescriptCommand`.
-
-```ts
-generateSwaggerFromFile({
-	inputFile: "./swagger.json",
-	openApiTypescriptCommand:
-		"npx -y -p openapi-typescript@7.0.0 -p typescript@5.9.3 openapi-typescript ./swagger.json --output ./src/handler/service/@types/ApiTypes.d.ts",
-});
-```
-
-Or override only the package versions used to build the default command.
+You can pin the package versions used by the isolated command.
 
 ```ts
 generateSwaggerFromFile({

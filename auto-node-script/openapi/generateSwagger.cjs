@@ -3,8 +3,20 @@ const http = require("http");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
-const { exec, execFile } = require("child_process");
+const { execFile } = require("child_process");
 const { generateSwaggerServices } = require("./generateSwaggerXxxService.cjs");
+
+const MAX_EVENT_BUFFER_BYTES = 10 * 1024 * 1024;
+const MAX_HTTP_RESPONSE_BYTES = 25 * 1024 * 1024;
+
+const OPENAPI_OUTPUT_PATH_OPTIONS = [
+	"serviceDir",
+	"swaggerFile",
+	"typesDir",
+	"typesFile",
+	"unionArraysFile",
+	"commonServiceFile",
+];
 
 const DEFAULT_OPTIONS = {
 	hostname: "localhost",
@@ -21,7 +33,6 @@ const DEFAULT_OPTIONS = {
 	unionArraysFile: "./src/handler/service/apiUnionArrays.ts",
 	commonServiceFile: "./src/handler/service/commonService.ts",
 	reconnectDelayMs: 10000,
-	openApiTypescriptCommand: null,
 	openApiTypescriptPackage: "openapi-typescript@latest",
 	openApiTypescriptTypescriptPackage: "typescript@5.9.3",
 	generateServices: true,
@@ -30,8 +41,34 @@ const DEFAULT_OPTIONS = {
 	log: console,
 };
 
+function assertProjectOutputPath(filePath, optionName) {
+	if (typeof filePath !== "string" || filePath.trim().length === 0) {
+		throw new Error(`${optionName} must be a non-empty path.`);
+	}
+
+	const projectRoot = path.resolve(process.cwd());
+	const resolvedPath = path.resolve(projectRoot, filePath);
+	const relativePath = path.relative(projectRoot, resolvedPath);
+	if (
+		relativePath === ".." ||
+		relativePath.startsWith(`..${path.sep}`) ||
+		path.isAbsolute(relativePath)
+	) {
+		throw new Error(`${optionName} must stay inside the current project directory.`);
+	}
+}
+
+function assertNpmPackageSpec(packageSpec, packageName, optionName) {
+	if (
+		typeof packageSpec !== "string" ||
+		!new RegExp(`^${packageName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}@[A-Za-z0-9._*+^~<>=-]+$`).test(packageSpec)
+	) {
+		throw new Error(`${optionName} must be a ${packageName}@<version-or-tag> package spec.`);
+	}
+}
+
 function mergeOptions(options = {}) {
-	return {
+	const merged = {
 		...DEFAULT_OPTIONS,
 		...options,
 		headers: {
@@ -39,6 +76,24 @@ function mergeOptions(options = {}) {
 			...(options.headers || {}),
 		},
 	};
+
+	OPENAPI_OUTPUT_PATH_OPTIONS.forEach((optionName) => {
+		assertProjectOutputPath(merged[optionName], optionName);
+	});
+	assertNpmPackageSpec(
+		merged.openApiTypescriptPackage,
+		"openapi-typescript",
+		"openApiTypescriptPackage",
+	);
+	if (merged.openApiTypescriptTypescriptPackage) {
+		assertNpmPackageSpec(
+			merged.openApiTypescriptTypescriptPackage,
+			"typescript",
+			"openApiTypescriptTypescriptPackage",
+		);
+	}
+
+	return merged;
 }
 
 function ensureDirSync(dirPath) {
@@ -65,49 +120,9 @@ function getRelativeImportPath(fromFilePath, toFilePath) {
 	return normalizeImportPath(stripExtension(rel));
 }
 
-function quoteShellArg(value) {
-	return `'${String(value).replace(/'/g, "'\\''")}'`;
-}
-
-function createOpenApiTypescriptCommand(options) {
-	if (options.openApiTypescriptCommand) {
-		return options.openApiTypescriptCommand;
-	}
-
-	const packages = [options.openApiTypescriptPackage];
-	if (options.openApiTypescriptTypescriptPackage) {
-		packages.push(options.openApiTypescriptTypescriptPackage);
-	}
-
-	const packageArgs = packages
-		.filter(Boolean)
-		.map((packageName) => `-p ${quoteShellArg(packageName)}`)
-		.join(" ");
-
-	return `npx -y ${packageArgs} openapi-typescript ${quoteShellArg(options.swaggerFile)} --output ${quoteShellArg(options.typesFile)}`;
-}
-
 function generateTypes(options, onSuccess = () => {}) {
+	options = mergeOptions(options);
 	options.log.log?.("Running openapi-typescript...");
-
-	if (options.openApiTypescriptCommand) {
-		const command = createOpenApiTypescriptCommand(options);
-		exec(command, (err, stdout, stderr) => {
-			if (err) {
-				options.log.error?.("Failed to generate TypeScript types:", err.message);
-				return;
-			}
-			if (stdout) {
-				options.log.log?.(stdout);
-			}
-			if (stderr) {
-				options.log.error?.("openapi-typescript stderr:", stderr);
-			}
-			options.log.log?.("TypeScript types generated successfully.");
-			onSuccess();
-		});
-		return;
-	}
 
 	const packages = [options.openApiTypescriptPackage];
 	if (options.openApiTypescriptTypescriptPackage) {
@@ -137,6 +152,7 @@ function generateTypes(options, onSuccess = () => {}) {
 }
 
 function generateUnionArrays(swaggerData, options = DEFAULT_OPTIONS) {
+	options = mergeOptions(options);
 	const log = options.log || console;
 
     log.log?.('Generating union arrays file...');
@@ -483,17 +499,24 @@ function parseServerSentEvent(event, log = console) {
 	try {
 		return JSON.parse(data);
 	} catch (err) {
-		log.error?.("Failed to parse JSON data:", err.message, "\nRaw Data:", data);
+		log.error?.(
+			"Failed to parse JSON data:",
+			err.message,
+			`(payload length: ${Buffer.byteLength(data, "utf8")} bytes)`,
+		);
 		return null;
 	}
 }
-
 
 function parseJsonResponseText(text, log = console) {
 	try {
 		return JSON.parse(text);
 	} catch (err) {
-		log.error?.("Failed to parse JSON response:", err.message, "\nRaw Data:", text);
+		log.error?.(
+			"Failed to parse JSON response:",
+			err.message,
+			`(payload length: ${Buffer.byteLength(text, "utf8")} bytes)`,
+		);
 		return null;
 	}
 }
@@ -520,11 +543,26 @@ function requestJsonOnce(rawOptions = {}) {
 			createRequestOptions(options, { Accept: "application/json" }),
 			(res) => {
 				let body = "";
+				let bodyBytes = 0;
+				let responseTooLarge = false;
 				res.setEncoding("utf8");
 				res.on("data", (chunk) => {
+					if (responseTooLarge) {
+						return;
+					}
+					bodyBytes += Buffer.byteLength(chunk, "utf8");
+					if (bodyBytes > MAX_HTTP_RESPONSE_BYTES) {
+						responseTooLarge = true;
+						reject(new Error(`HTTP response exceeded ${MAX_HTTP_RESPONSE_BYTES} bytes.`));
+						res.destroy();
+						return;
+					}
 					body += chunk;
 				});
 				res.on("end", () => {
+					if (responseTooLarge) {
+						return;
+					}
 					if (res.statusCode < 200 || res.statusCode >= 300) {
 						reject(new Error(`HTTP ${res.statusCode}: ${body}`));
 						return;
@@ -628,6 +666,13 @@ function connectToSwaggerEventStream(rawOptions = {}) {
 
 				res.on("data", (chunk) => {
 					eventBuffer += chunk;
+					if (Buffer.byteLength(eventBuffer, "utf8") > MAX_EVENT_BUFFER_BYTES) {
+						options.log.error?.(`Swagger EventStream buffer exceeded ${MAX_EVENT_BUFFER_BYTES} bytes.`);
+						eventBuffer = "";
+						res.destroy();
+						scheduleReconnect();
+						return;
+					}
 					let boundary = eventBuffer.indexOf("\n\n");
 					while (boundary !== -1) {
 						const event = eventBuffer.slice(0, boundary);
@@ -725,7 +770,6 @@ module.exports = {
 	requestJsonOnce,
 	generateSwaggerFromHttp,
 	generateSwaggerFromFile,
-	createOpenApiTypescriptCommand,
 	generateTypes,
 	generateUnionArrays,
 	handleSwaggerData,

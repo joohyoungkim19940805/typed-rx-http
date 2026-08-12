@@ -672,17 +672,7 @@ npx -y -p openapi-typescript@latest -p typescript@5.9.3 openapi-typescript swagg
 
 따라서 사용법 자체는 바뀌지 않습니다. 기존처럼 auto node script를 호출하면 되고, OpenAPI 타입 생성 단계에서만 격리된 TypeScript 5.9.3 환경이 사용됩니다. auto script를 쓰지 않는 사용자는 `openapi-typescript`나 TypeScript 5.9.3에 전혀 묶이지 않습니다.
 
-필요하면 `openApiTypescriptCommand`로 명령을 직접 고정할 수 있습니다.
-
-```ts
-generateSwaggerFromFile({
-	inputFile: "./swagger.json",
-	openApiTypescriptCommand:
-		"npx -y -p openapi-typescript@7.0.0 -p typescript@5.9.3 openapi-typescript ./swagger.json --output ./src/handler/service/@types/ApiTypes.d.ts",
-});
-```
-
-또는 기본 명령을 구성하는 패키지 버전만 바꿀 수도 있습니다.
+필요하면 기본 명령에 사용되는 패키지 버전만 고정할 수 있습니다.
 
 ```ts
 generateSwaggerFromFile({

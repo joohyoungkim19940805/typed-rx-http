@@ -4,6 +4,17 @@ const fs = require("fs");
 const path = require("path");
 const { generateAsyncApiRSocketServices } = require("./generateAsyncApiRSocketXxxService.cjs");
 
+const MAX_EVENT_BUFFER_BYTES = 10 * 1024 * 1024;
+const MAX_HTTP_RESPONSE_BYTES = 25 * 1024 * 1024;
+
+const ASYNCAPI_OUTPUT_PATH_OPTIONS = [
+	"serviceDir",
+	"asyncApiRSocketFile",
+	"typesDir",
+	"typesFile",
+	"commonRSocketServiceFile",
+];
+
 const SERVICE_DIR = "./src/handler/service";
 const ASYNC_API_RSOCKET_FILE = "./asyncapi-rsocket.json"; // 저장할 AsyncAPI RSocket 파일 경로
 const TYPES_DIR = "./src/handler/service/@types";
@@ -56,10 +67,6 @@ const options = {
 		Accept: "text/event-stream",
 	},
 };
-
-// 이벤트 버퍼
-let eventBuffer = "";
-let reconnectTimeout = null;
 
 function isObject(value) {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -494,8 +501,25 @@ const DEFAULT_OPTIONS = {
 	log: console,
 };
 
+function assertProjectOutputPath(filePath, optionName) {
+	if (typeof filePath !== "string" || filePath.trim().length === 0) {
+		throw new Error(`${optionName} must be a non-empty path.`);
+	}
+
+	const projectRoot = path.resolve(process.cwd());
+	const resolvedPath = path.resolve(projectRoot, filePath);
+	const relativePath = path.relative(projectRoot, resolvedPath);
+	if (
+		relativePath === ".." ||
+		relativePath.startsWith(`..${path.sep}`) ||
+		path.isAbsolute(relativePath)
+	) {
+		throw new Error(`${optionName} must stay inside the current project directory.`);
+	}
+}
+
 function mergeOptions(options = {}) {
-	return {
+	const merged = {
 		...DEFAULT_OPTIONS,
 		...options,
 		headers: {
@@ -503,6 +527,12 @@ function mergeOptions(options = {}) {
 			...(options.headers || {}),
 		},
 	};
+
+	ASYNCAPI_OUTPUT_PATH_OPTIONS.forEach((optionName) => {
+		assertProjectOutputPath(merged[optionName], optionName);
+	});
+
+	return merged;
 }
 
 function ensureDirSync(dirPath) {
@@ -572,17 +602,24 @@ function parseServerSentEvent(event, log = console) {
 	try {
 		return JSON.parse(data);
 	} catch (err) {
-		log.error?.("Failed to parse JSON data:", err.message, "\nRaw Data:", data);
+		log.error?.(
+			"Failed to parse JSON data:",
+			err.message,
+			`(payload length: ${Buffer.byteLength(data, "utf8")} bytes)`,
+		);
 		return null;
 	}
 }
-
 
 function parseJsonResponseText(text, log = console) {
 	try {
 		return JSON.parse(text);
 	} catch (err) {
-		log.error?.("Failed to parse JSON response:", err.message, "\nRaw Data:", text);
+		log.error?.(
+			"Failed to parse JSON response:",
+			err.message,
+			`(payload length: ${Buffer.byteLength(text, "utf8")} bytes)`,
+		);
 		return null;
 	}
 }
@@ -609,11 +646,26 @@ function requestJsonOnce(rawOptions = {}) {
 			createRequestOptions(options, { Accept: "application/json" }),
 			(res) => {
 				let body = "";
+				let bodyBytes = 0;
+				let responseTooLarge = false;
 				res.setEncoding("utf8");
 				res.on("data", (chunk) => {
+					if (responseTooLarge) {
+						return;
+					}
+					bodyBytes += Buffer.byteLength(chunk, "utf8");
+					if (bodyBytes > MAX_HTTP_RESPONSE_BYTES) {
+						responseTooLarge = true;
+						reject(new Error(`HTTP response exceeded ${MAX_HTTP_RESPONSE_BYTES} bytes.`));
+						res.destroy();
+						return;
+					}
 					body += chunk;
 				});
 				res.on("end", () => {
+					if (responseTooLarge) {
+						return;
+					}
 					if (res.statusCode < 200 || res.statusCode >= 300) {
 						reject(new Error(`HTTP ${res.statusCode}: ${body}`));
 						return;
@@ -716,6 +768,13 @@ function connectToAsyncApiRSocketEventStream(rawOptions = {}) {
 
 				res.on("data", (chunk) => {
 					eventBuffer += chunk;
+					if (Buffer.byteLength(eventBuffer, "utf8") > MAX_EVENT_BUFFER_BYTES) {
+						options.log.error?.(`AsyncAPI RSocket EventStream buffer exceeded ${MAX_EVENT_BUFFER_BYTES} bytes.`);
+						eventBuffer = "";
+						res.destroy();
+						scheduleReconnect();
+						return;
+					}
 					let boundary = eventBuffer.indexOf("\n\n");
 					while (boundary !== -1) {
 						const event = eventBuffer.slice(0, boundary);
